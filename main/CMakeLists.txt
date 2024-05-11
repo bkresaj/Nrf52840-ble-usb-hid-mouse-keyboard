@@ -11,6 +11,7 @@ project(nrf-usb)
 
 target_sources(app PRIVATE 
               main.c
+              src/hid_mouse.c
               src/uart_async_adapter.c
               src/nus_service.c)
 
