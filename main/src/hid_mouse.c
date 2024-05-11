@@ -1,10 +1,6 @@
 #include "hid_mouse.h"
 
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/input/input.h>
-#include <zephyr/sys/util.h>
 
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/class/usb_hid.h>
@@ -14,13 +10,11 @@
 LOG_MODULE_REGISTER(hid_mouse, LOG_LEVEL_INF);
 
 #define MOUSE_DEV_NAME "HID_0"
-#define MOUSE_REPORT_ID 0
 #define MOUSE_REPORT_SIZE 4
-#define MOUSE_BUTTON_LEFT 0x01
-#define MOUSE_BUTTON_RIGHT 0x02
-
 #define MOUSE_BTN_LEFT 0
 #define MOUSE_BTN_RIGHT 1
+
+#define MAX_BUTTON_MOVE_VALUE 500
 
 static uint8_t mouse_report[MOUSE_REPORT_SIZE];
 
@@ -58,7 +52,7 @@ bool init_hid_mouse()
 {
     int ret;
 
-    hid_dev = device_get_binding("HID_0");
+    hid_dev = device_get_binding(MOUSE_DEV_NAME);
     if (hid_dev == NULL)
     {
         LOG_ERR("Cannot get USB HID Device");
@@ -86,52 +80,62 @@ bool init_hid_mouse()
     return true;
 }
 
-bool mouse_left_click()
+bool hid_mouse_left_click()
 {
     LOG_INF("%s", __func__);
 
     mouse_report[1] = 0;
     mouse_report[2] = 0;
     WRITE_BIT(mouse_report[MOUSE_BTN_REPORT_IDX], MOUSE_BTN_LEFT, 1);
+
     hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL);
 
     k_sleep(K_MSEC(10));
 
-    // mouse_report[1] = 0;
-    // mouse_report[2] = 0;
-
     WRITE_BIT(mouse_report[MOUSE_BTN_REPORT_IDX], MOUSE_BTN_LEFT, 0);
-    hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL);
+
+    if (hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
-bool mouse_right_click()
+bool hid_mouse_right_click()
 {
     LOG_INF("%s", __func__);
 
     mouse_report[1] = 0;
     mouse_report[2] = 0;
     WRITE_BIT(mouse_report[MOUSE_BTN_REPORT_IDX], MOUSE_BTN_RIGHT, 1);
+
     hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL);
 
     k_sleep(K_MSEC(10));
 
-    // mouse_report[1] = 0;
-    // mouse_report[2] = 0;
-
     WRITE_BIT(mouse_report[MOUSE_BTN_REPORT_IDX], MOUSE_BTN_RIGHT, 0);
-    hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL);
+
+    if (hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
-bool mouse_move_up(const size_t move_value)
+static bool hid_mouse_move(const int move_x, const int move_y)
 {
-    LOG_INF("%s", __func__);
-
-    if (move_value <= 500)
+    if (move_x <= MAX_BUTTON_MOVE_VALUE && move_y <= MAX_BUTTON_MOVE_VALUE)
     {
         rwup_if_suspended();
-        mouse_report[0] = 0;
-        mouse_report[1] = 0;
-        mouse_report[MOUSE_Y_REPORT_IDX] = -move_value;
+        mouse_report[MOUSE_BTN_REPORT_IDX] = 0;
+        mouse_report[MOUSE_X_REPORT_IDX] = move_x;
+        mouse_report[MOUSE_Y_REPORT_IDX] = move_y;
         if (hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0)
         {
             return true;
@@ -144,68 +148,30 @@ bool mouse_move_up(const size_t move_value)
     return false;
 }
 
-bool mouse_move_down(const size_t move_value)
+bool hid_mouse_move_up(const size_t move_value)
 {
     LOG_INF("%s", __func__);
 
-    if (move_value <= 500)
-    {
-        rwup_if_suspended();
-        mouse_report[0] = 0;
-        mouse_report[1] = 0;
-        mouse_report[MOUSE_Y_REPORT_IDX] = move_value;
-        if (hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0)
-        {
-            return true;
-        }
-    }
-    else
-    {
-        LOG_ERR("Wrong move value");
-    }
-    return false;
+    return hid_mouse_move(0, -move_value);
 }
 
-bool mouse_move_left(const size_t move_value)
+bool hid_mouse_move_down(const size_t move_value)
 {
     LOG_INF("%s", __func__);
 
-    if (move_value <= 500)
-    {
-        rwup_if_suspended();
-        mouse_report[0] = 0;
-        mouse_report[MOUSE_X_REPORT_IDX] = -move_value;
-        mouse_report[2] = 0;
-        if (hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0)
-        {
-            return true;
-        }
-    }
-    else
-    {
-        LOG_ERR("Wrong move value");
-    }
-    return false;
+    return hid_mouse_move(0, move_value);
 }
 
-bool mouse_move_right(const size_t move_value)
+bool hid_mouse_move_left(const size_t move_value)
 {
     LOG_INF("%s", __func__);
 
-    if (move_value <= 500)
-    {
-        rwup_if_suspended();
-        mouse_report[0] = 0;
-        mouse_report[MOUSE_X_REPORT_IDX] = move_value;
-        mouse_report[2] = 0;
-        if (hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0)
-        {
-            return true;
-        }
-    }
-    else
-    {
-        LOG_ERR("Wrong move value");
-    }
-    return false;
+    return hid_mouse_move(move_value, 0);
+}
+
+bool hid_mouse_move_right(const size_t move_value)
+{
+    LOG_INF("%s", __func__);
+
+    return hid_mouse_move(-move_value, 0);
 }

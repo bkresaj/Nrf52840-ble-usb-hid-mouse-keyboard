@@ -1,8 +1,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
-#include <nus_service.h>
+#include <ble_service.h>
 #include <dk_buttons_and_leds.h>
-// #include "hid_mouse.h"
+#include "hid_mouse.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -11,23 +11,21 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 int main(void)
 {
 	int blink_status = 0;
-	int err = 0;
+	bool is_usb_enabled = false;
+
+	if (!init_hid_mouse())
+	{
+		LOG_ERR("Failed to init hid mouse");
+		return 0;
+	}
+	else
+	{
+		is_usb_enabled = true;
+	}
 
 	configure_gpio();
 
-	err = uart_init();
-	if (err)
-	{
-		error();
-	}
-
-	init_nus_ble();
-
-	// if (!init_hid_mouse())
-	// {
-	// 	LOG_ERR("Failed to init hid mouse");
-	// 	return 0;
-	// }
+	init_ble();
 
 	for (;;)
 	{
