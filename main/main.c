@@ -3,6 +3,7 @@
 #include <ble_service.h>
 #include <dk_buttons_and_leds.h>
 #include "hid_mouse.h"
+#include "hid_keyboard.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -13,19 +14,21 @@ int main(void)
 	int blink_status = 0;
 	bool is_usb_enabled = false;
 
-	if (!init_hid_mouse())
+	if (!init_hid_mouse(&is_usb_enabled))
 	{
 		LOG_ERR("Failed to init hid mouse");
 		return 0;
-	}
-	else
-	{
-		is_usb_enabled = true;
 	}
 
 	configure_gpio();
 
 	init_ble();
+
+	if (!init_hid_keyboard(&is_usb_enabled))
+	{
+		LOG_ERR("Failed to init hid keyboard");
+		return 0;
+	}
 
 	for (;;)
 	{

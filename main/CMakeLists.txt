@@ -9,6 +9,7 @@ project(nrf-usb)
 
 target_sources(app PRIVATE 
               main.c
+              src/hid_keyboard.c
               src/hid_mouse.c
               src/ble_service.c)
 

@@ -48,7 +48,7 @@ static void status_cb(enum usb_dc_status_code status, const uint8_t *param)
     usb_status = status;
 }
 
-bool init_hid_mouse()
+bool init_hid_mouse(bool *is_usb_enabled)
 {
     int ret;
 
@@ -70,11 +70,15 @@ bool init_hid_mouse()
         return false;
     }
 
-    ret = usb_enable(status_cb);
-    if (ret != 0)
+    if (!*is_usb_enabled)
     {
-        LOG_ERR("Failed to enable USB");
-        return false;
+        ret = usb_enable(status_cb);
+        if (ret != 0)
+        {
+            LOG_ERR("Failed to enable USB");
+            return false;
+        }
+        *is_usb_enabled = true;
     }
 
     return true;
