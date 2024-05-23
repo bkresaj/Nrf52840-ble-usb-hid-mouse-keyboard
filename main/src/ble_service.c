@@ -8,6 +8,10 @@
 #include <bluetooth/services/nus.h>
 #include <dk_buttons_and_leds.h>
 #include <zephyr/settings/settings.h>
+#include <stdlib.h>
+
+#include "hid_keyboard.h"
+#include "hid_mouse.h"
 
 #define LOG_MODULE_NAME ble_service
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
@@ -30,6 +34,31 @@ static const struct bt_data ad[] = {
 static const struct bt_data sd[] = {
 	BT_DATA_BYTES(BT_DATA_UUID128_ALL, BT_UUID_NUS_VAL),
 };
+
+static void process_ble_input(const char *input_string, size_t data_len)
+{
+	LOG_INF("process_ble_input %.*s", data_len, input_string);
+	if (strstr(input_string, "up:") != 0)
+	{
+		hid_mouse_move_up(atoi(strstr(input_string, "up:") + strlen("up:")));
+	}
+	else if (strstr(input_string, "down:") != 0)
+	{
+		hid_mouse_move_down(atoi(strstr(input_string, "down:") + strlen("down:")));
+	}
+	else if (strstr(input_string, "left:") != 0)
+	{
+		hid_mouse_move_left(atoi(strstr(input_string, "left:") + strlen("left:")));
+	}
+	else if (strstr(input_string, "right:") != 0)
+	{
+		hid_mouse_move_right(atoi(strstr(input_string, "right:") + strlen("right:")));
+	}
+	else
+	{
+		hid_heyboard_send(input_string, data_len);
+	}
+}
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
@@ -85,7 +114,18 @@ static void bt_receive_cb(struct bt_conn *conn, const uint8_t *const data,
 
 	LOG_INF("Received data from: %s", addr);
 	LOG_INF("Data length %d", len);
-	LOG_INF("Data received: %.*s", len - 2, (char *)data);
+
+	if (len > 2)
+	{
+		if (len == 20)
+		{
+			process_ble_input(data, len);
+		}
+		else
+		{
+			process_ble_input(data, len - 2);
+		}
+	}
 }
 
 static struct bt_nus_cb nus_cb = {

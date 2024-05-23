@@ -16,6 +16,19 @@ LOG_MODULE_REGISTER(hid_keyboard);
 static const uint8_t hid_kbd_report_desc[] = HID_KEYBOARD_REPORT_DESC();
 static const struct device *hid1_dev = NULL;
 
+static K_SEM_DEFINE(usb_sem, 1, 1);
+
+static void in_ready_cb(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+
+    k_sem_give(&usb_sem);
+}
+
+static const struct hid_ops ops = {
+    .int_in_ready = in_ready_cb,
+};
+
 static int ascii_to_hid(uint8_t ascii)
 {
     if (ascii < 32)
@@ -197,10 +210,8 @@ static bool needs_shift(uint8_t ascii)
     }
 }
 
-bool init_hid_keyboard(bool *is_usb_enabled)
+bool init_hid_keyboard()
 {
-    int ret;
-
     hid1_dev = device_get_binding("HID_1");
     if (hid1_dev == NULL)
     {
@@ -209,7 +220,7 @@ bool init_hid_keyboard(bool *is_usb_enabled)
     }
 
     usb_hid_register_device(hid1_dev, hid_kbd_report_desc,
-                            sizeof(hid_kbd_report_desc), NULL);
+                            sizeof(hid_kbd_report_desc), &ops);
 
     if (usb_hid_init(hid1_dev) != 0)
     {
@@ -217,54 +228,58 @@ bool init_hid_keyboard(bool *is_usb_enabled)
         return false;
     }
 
-    if (!*is_usb_enabled)
-    {
-        ret = usb_enable(NULL);
-        if (ret != 0)
-        {
-            LOG_ERR("Failed to enable USB");
-            return false;
-        }
-        *is_usb_enabled = true;
-    }
+    k_sleep(K_MSEC(2000));
 
     return true;
 }
 
-bool send_something()
+bool hid_heyboard_send(const char *input_string, size_t data_len)
 {
-
-    // int ch = ascii_to_hid(string[str_pointer]);
-    int ch = ascii_to_hid(50);
-
-    if (ch == -1)
+    if (input_string == NULL || data_len == 0)
     {
-        // LOG_WRN("Unsupported character: %d",
-        //         string[str_pointer]);
+        LOG_ERR("Wrong parameters, function %s", __func__);
+    }
+
+    bool character_invalid = false;
+
+    for (size_t i = 0; i < data_len; i++)
+    {
+        int hid_code = ascii_to_hid(*(input_string + i));
+
+        if (hid_code != -1)
+        {
+            uint8_t rep[] = {0x00, 0x00, 0x00, 0x00,
+                             0x00, 0x00, 0x00, 0x00};
+
+            if (needs_shift(*(input_string + i)))
+            {
+                rep[0] |= HID_KBD_MODIFIER_RIGHT_SHIFT;
+            }
+
+            rep[7] = (uint8_t)hid_code;
+
+            k_sem_take(&usb_sem, K_FOREVER);
+
+            hid_int_ep_write(hid1_dev, rep, sizeof(rep), NULL);
+
+            uint8_t rep2[] = {0x00, 0x00, 0x00, 0x00,
+                              0x00, 0x00, 0x00, 0x00};
+
+            k_sem_take(&usb_sem, K_FOREVER);
+            hid_int_ep_write(hid1_dev, rep2, sizeof(rep2), NULL);
+        }
+        else
+        {
+            character_invalid = true;
+        }
+    }
+
+    if (character_invalid)
+    {
+        return false;
     }
     else
     {
-        uint8_t rep[] = {0x00, 0x00, 0x00, 0x00,
-                         0x00, 0x00, 0x00, 0x00};
-        // if (needs_shift(string[str_pointer]))
-        if (needs_shift(50))
-        {
-            rep[0] |=
-                HID_KBD_MODIFIER_RIGHT_SHIFT;
-        }
-        rep[7] = ch;
-
-        hid_int_ep_write(hid1_dev, rep,
-                         sizeof(rep), NULL);
+        return true;
     }
-
-    k_sleep(K_MSEC(500));
-
-    uint8_t rep2[] = {0x00, 0x00, 0x00, 0x00,
-                      0x00, 0x00, 0x00, 0x00};
-
-    hid_int_ep_write(hid1_dev, rep2,
-                     sizeof(rep2), NULL);
-
-    return true;
 }

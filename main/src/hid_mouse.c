@@ -14,13 +14,15 @@ LOG_MODULE_REGISTER(hid_mouse, LOG_LEVEL_INF);
 #define MOUSE_BTN_LEFT 0
 #define MOUSE_BTN_RIGHT 1
 
-#define MAX_BUTTON_MOVE_VALUE 500
+#define MAX_BUTTON_MOVE_VALUE 1000
 
 static uint8_t mouse_report[MOUSE_REPORT_SIZE];
 
 static const struct device *hid_dev = NULL;
-static const uint8_t hid_report_desc[] = HID_MOUSE_REPORT_DESC(2);
+static const uint8_t hid_report_desc[] = HID_MOUSE_REPORT_DESC(1);
 static enum usb_dc_status_code usb_status;
+
+static K_SEM_DEFINE(report_sem, 1, 1);
 
 enum mouse_report_idx
 {
@@ -29,6 +31,17 @@ enum mouse_report_idx
     MOUSE_Y_REPORT_IDX = 2,
     MOUSE_WHEEL_REPORT_IDX = 3,
     MOUSE_REPORT_COUNT = 4,
+};
+
+static void in_ready_cb(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+
+    k_sem_give(&report_sem);
+}
+
+static const struct hid_ops ops = {
+    .int_in_ready = in_ready_cb,
 };
 
 static ALWAYS_INLINE void rwup_if_suspended(void)
@@ -48,7 +61,7 @@ static void status_cb(enum usb_dc_status_code status, const uint8_t *param)
     usb_status = status;
 }
 
-bool init_hid_mouse(bool *is_usb_enabled)
+bool init_hid_mouse()
 {
     int ret;
 
@@ -61,7 +74,7 @@ bool init_hid_mouse(bool *is_usb_enabled)
 
     usb_hid_register_device(hid_dev,
                             hid_report_desc, sizeof(hid_report_desc),
-                            NULL);
+                            &ops);
 
     ret = usb_hid_init(hid_dev);
     if (ret != 0)
@@ -70,16 +83,14 @@ bool init_hid_mouse(bool *is_usb_enabled)
         return false;
     }
 
-    if (!*is_usb_enabled)
+    ret = usb_enable(status_cb);
+    if (ret != 0)
     {
-        ret = usb_enable(status_cb);
-        if (ret != 0)
-        {
-            LOG_ERR("Failed to enable USB");
-            return false;
-        }
-        *is_usb_enabled = true;
+        LOG_ERR("Failed to enable USB");
+        return false;
     }
+
+    k_sleep(K_MSEC(2000));
 
     return true;
 }
@@ -132,16 +143,112 @@ bool hid_mouse_right_click()
     }
 }
 
-static bool hid_mouse_move(const int move_x, const int move_y)
+static bool send_mapped_x_value(uint8_t mapped_value)
 {
-    if (move_x <= MAX_BUTTON_MOVE_VALUE && move_y <= MAX_BUTTON_MOVE_VALUE)
+    mouse_report[MOUSE_X_REPORT_IDX] = mapped_value;
+    k_sem_take(&report_sem, K_FOREVER);
+    LOG_INF("Move x value %d", mapped_value);
+    return hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0;
+}
+
+static bool send_mapped_y_value(uint8_t mapped_value)
+{
+    mouse_report[MOUSE_Y_REPORT_IDX] = mapped_value;
+    k_sem_take(&report_sem, K_FOREVER);
+    LOG_INF("Move y value %d", mapped_value);
+    return hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0;
+}
+
+static bool hid_mouse_move(int move_x, int move_y)
+{
+    if (move_x >= -MAX_BUTTON_MOVE_VALUE && move_x <= MAX_BUTTON_MOVE_VALUE && move_y >= -MAX_BUTTON_MOVE_VALUE && move_y <= MAX_BUTTON_MOVE_VALUE)
     {
-        rwup_if_suspended();
-        mouse_report[MOUSE_BTN_REPORT_IDX] = 0;
-        mouse_report[MOUSE_X_REPORT_IDX] = move_x;
-        mouse_report[MOUSE_Y_REPORT_IDX] = move_y;
-        if (hid_int_ep_write(hid_dev, mouse_report, sizeof(mouse_report), NULL) == 0)
+        if (move_y == 0 && move_x != 0)
         {
+            mouse_report[MOUSE_BTN_REPORT_IDX] = 0;
+            mouse_report[MOUSE_Y_REPORT_IDX] = 0;
+            if (move_x < 0)
+            {
+                while (move_x < -128)
+                {
+                    if (!send_mapped_x_value(128))
+                    {
+                        return false;
+                    }
+                    move_x += 128;
+                }
+
+                if (move_x != 0)
+                {
+                    move_x = 255 + move_x;
+                    if (!send_mapped_x_value(move_x))
+                    {
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                while (move_x >= 128)
+                {
+                    if (!send_mapped_x_value(127))
+                    {
+                        return false;
+                    }
+                    move_x -= 128;
+                }
+                if (move_x >= 0)
+                {
+                    if (!send_mapped_x_value(move_x))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        else if (move_x == 0 && move_y != 0)
+        {
+            mouse_report[MOUSE_BTN_REPORT_IDX] = 0;
+            mouse_report[MOUSE_X_REPORT_IDX] = 0;
+            if (move_y < 0)
+            {
+                while (move_y < -128)
+                {
+                    if (!send_mapped_y_value(128))
+                    {
+                        return false;
+                    }
+                    move_y += 128;
+                }
+
+                if (move_y != 0)
+                {
+                    move_y = 255 + move_y;
+                    if (!send_mapped_y_value(move_y))
+                    {
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                while (move_y >= 128)
+                {
+                    if (!send_mapped_y_value(127))
+                    {
+                        return false;
+                    }
+                    move_y -= 128;
+                }
+                if (move_y >= 0)
+                {
+                    if (!send_mapped_y_value(move_y))
+                    {
+                        return false;
+                    }
+                }
+            }
             return true;
         }
     }
@@ -170,12 +277,12 @@ bool hid_mouse_move_left(const size_t move_value)
 {
     LOG_INF("%s", __func__);
 
-    return hid_mouse_move(move_value, 0);
+    return hid_mouse_move(-move_value, 0);
 }
 
 bool hid_mouse_move_right(const size_t move_value)
 {
     LOG_INF("%s", __func__);
 
-    return hid_mouse_move(-move_value, 0);
+    return hid_mouse_move(move_value, 0);
 }

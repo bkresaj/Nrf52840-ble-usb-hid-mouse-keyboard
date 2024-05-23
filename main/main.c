@@ -12,24 +12,23 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 int main(void)
 {
 	int blink_status = 0;
-	bool is_usb_enabled = false;
-
-	if (!init_hid_mouse(&is_usb_enabled))
-	{
-		LOG_ERR("Failed to init hid mouse");
-		return 0;
-	}
 
 	configure_gpio();
 
 	init_ble();
 
-	if (!init_hid_keyboard(&is_usb_enabled))
+	if (!init_hid_keyboard())
 	{
 		LOG_ERR("Failed to init hid keyboard");
 		return 0;
 	}
 
+	if (!init_hid_mouse())
+	{
+		LOG_ERR("Failed to init hid mouse");
+		return 0;
+	}
+	
 	for (;;)
 	{
 		dk_set_led(RUN_STATUS_LED, (++blink_status) % 2);

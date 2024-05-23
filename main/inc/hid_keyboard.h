@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-bool init_hid_keyboard(bool *is_usb_enabled);
-bool send_something();
+bool init_hid_keyboard();
+bool hid_heyboard_send(const char* input_string, size_t data_len);
 
 #endif // HID_KEYBOARD_H
