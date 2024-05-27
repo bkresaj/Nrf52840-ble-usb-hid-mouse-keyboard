@@ -1,15 +1,38 @@
+#include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
-#include <zephyr/usb/usb_device.h>
+#include <ble_service.h>
+#include <dk_buttons_and_leds.h>
+#include "hid_mouse.h"
+#include "hid_keyboard.h"
 
-LOG_MODULE_REGISTER(EXAMPLE, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
+
+#define RUN_STATUS_LED DK_LED1
 
 int main(void)
 {
-    while (1)
-    {   
-        k_sleep(K_MSEC(2000));
-        LOG_INF("While loop :)\n");
-        LOG_ERR("While loop :)\n");
-    }
-    return 0;
+	int blink_status = 0;
+
+	configure_gpio();
+
+	init_ble();
+
+	if (!init_hid_keyboard())
+	{
+		LOG_ERR("Failed to init hid keyboard");
+		return 0;
+	}
+
+	if (!init_hid_mouse())
+	{
+		LOG_ERR("Failed to init hid mouse");
+		return 0;
+	}
+	
+	for (;;)
+	{
+		dk_set_led(RUN_STATUS_LED, (++blink_status) % 2);
+		LOG_INF("while loop");
+		k_sleep(K_MSEC(5000));
+	}
 }
